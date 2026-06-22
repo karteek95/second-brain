@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "chromadb>=0.5.23",
     "datasets>=5.0.0",
+    "langfuse>=4.9.1",
     "ollama>=0.4.4",
     "pyyaml>=6.0.2",
     "rich>=13.9.4",
