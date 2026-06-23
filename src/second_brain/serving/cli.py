@@ -7,6 +7,7 @@ from urllib.parse import uses_query
 from pathlib import Path
 
 from rich import print
+from dotenv import load_dotenv
 
 from second_brain.application import (
     AgenticRagUseCase,
@@ -22,6 +23,7 @@ from second_brain.infrastructure.vector_stores import build_vector_index
 
 
 def build_runtime(config_path: Path):
+    load_dotenv()
     config = load_config(config_path)
 
     source = build_document_source(config["data_source"])
