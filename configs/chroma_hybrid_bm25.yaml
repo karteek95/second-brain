@@ -1,0 +1,26 @@
+data_source:
+  type: huggingface_summarization
+  dataset_id: pauliusztin/second_brain_course_summarization_task
+  text_field: instruction
+  answer_field: answer
+  splits:
+    - train
+
+chunking:
+  strategy: window
+  chunk_size: 256
+  chunk_overlap: 40
+
+vector_index:
+  type: hybrid_chroma_bm25
+  path: .chroma
+  collection: second_brain_hybrid_bm25
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+
+llm:
+  provider: ollama
+  model: qwen2.5:7b-instruct
+  temperature: 0.1
+
+observability:
+  trace_path: runs/traces.jsonl

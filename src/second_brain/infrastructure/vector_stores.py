@@ -9,8 +9,9 @@ from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunct
 
 from second_brain.domain import RetrievalHit, TextChunk
 
-#for BM25
+# for BM25
 from rank_bm25 import BM25Okapi
+
 
 class ChromaVectorIndex:
     """Chroma adapter used for the  local experiment.
@@ -52,30 +53,30 @@ class ChromaVectorIndex:
             )
 
     def search(self, query: str, k: int) -> list[RetrievalHit]:
-            result = self.collection.query(query_texts=[query], n_results=k)
+        result = self.collection.query(query_texts=[query], n_results=k)
 
-            documents = result["documents"][0]
-            metadatas = result["metadatas"][0]
-            distances = result["distances"][0]
+        documents = result["documents"][0]
+        metadatas = result["metadatas"][0]
+        distances = result["distances"][0]
 
-            hits: list[RetrievalHit] = []
-            for text, metadata, distance in zip(documents, metadatas, distances):
-                retrieval_text = str(metadata.get("retrieval_text") or text)
-                hits.append(
-                    RetrievalHit(
-                        text=retrieval_text,
-                        metadata=metadata,
-                        score=float(distance),
-                    )
+        hits: list[RetrievalHit] = []
+        for text, metadata, distance in zip(documents, metadatas, distances):
+            retrieval_text = str(metadata.get("retrieval_text") or text)
+            hits.append(
+                RetrievalHit(
+                    text=retrieval_text,
+                    metadata=metadata,
+                    score=float(distance),
                 )
+            )
 
-            return hits
+        return hits
 
     def _get_or_create(self):
         return self.client.get_or_create_collection(
             name=self._collection_name,
             embedding_function=self.embedding_fn,
-            metadata={"hnsw:space":"cosine"}
+            metadata={"hnsw:space": "cosine"}
         )
 
 
@@ -124,6 +125,10 @@ class HybridChromaBm25VectorIndex(ChromaVectorIndex):
         self._bm25 = BM25Okapi(tokenized_corpus)
 
     def search(self, query: str, k: int) -> list[RetrievalHit]:
+        # REQUIREMENT 3: Rebuild BM25 if it's empty when the server restarts
+        if not self._bm25:
+            self._rebuild_bm25_index()
+
         candidates_k = k * self.candidate_multiplier
 
         # 1. Semantic Search (from base class)
@@ -168,16 +173,13 @@ class HybridChromaBm25VectorIndex(ChromaVectorIndex):
         fused = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:k]
         return [hit_map[key] for key, score in fused]
 
-    
 
-
-
-def _tokenize_for_bm25(text:str) -> list[str]:
+def _tokenize_for_bm25(text: str) -> list[str]:
     return re.findall(r"\b\w+\b", text.lower())
 
 
 def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float | bool]:
-    clean:dict[str, str | int | float | bool] = {}
+    clean: dict[str, str | int | float | bool] = {}
 
     for key, value in metadata.items():
         if value is None:
@@ -189,11 +191,21 @@ def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, str | int | float 
 
     return clean
 
+
 def build_vector_index(config: dict) -> ChromaVectorIndex:
     index_type = config["type"]
 
     if index_type == "chroma":
         return ChromaVectorIndex(
+            path=config.get("path", ".chroma"),
+            collection=config["collection"],
+            embedding_model=config.get(
+                "embedding_model", "sentence-transformers/all-MiniLM-L6_v2"
+            ),
+        )
+    # REQUIREMENT 2: Support hybrid vector index
+    elif index_type == "hybrid_chroma_bm25":
+        return HybridChromaBm25VectorIndex(
             path=config.get("path", ".chroma"),
             collection=config["collection"],
             embedding_model=config.get(
