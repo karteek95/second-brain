@@ -109,65 +109,6 @@ class HybridChromaBm25VectorIndex(ChromaVectorIndex):
         self._bm25 = None
         self._bm25_records = []
 
-    def _rebuild_bm25_index(self) -> None:
-        data = self.collection.get()
-        if not data or not data["documents"]:
-            return
-
-        self._bm25_records = []
-        tokenized_corpus = []
-
-        for doc, meta in zip(data["documents"], data["metadatas"]):
-            self._bm25_records.append({"text": doc, "metadata": meta})
-            tokenized_corpus.append(_tokenize_for_bm25(doc))
-
-        self._bm25 = BM25Okapi(tokenized_corpus)
-
-    def search(self, query: str, k: int) -> list[RetrievalHit]:
-        candidates_k = k * self.candidate_multiplier
-
-        # 1. Semantic Search (from base class)
-        semantic_hits = super().search(query, candidates_k)
-
-        # 2. BM25 Keyword Search
-        bm25_hits = []
-        if self._bm25 and self._bm25_records:
-            tokenized_query = _tokenize_for_bm25(query)
-            scores = self._bm25.get_scores(tokenized_query)
-            # Get top indices based on highest scores
-            top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:candidates_k]
-
-            for idx in top_indices:
-                record = self._bm25_records[idx]
-                bm25_hits.append(
-                    RetrievalHit(
-                        text=record["text"],
-                        metadata=record["metadata"],
-                        score=float(scores[idx])
-                    )
-                )
-
-        # 3. Reciprocal Rank Fusion (RRF)
-        rrf_scores: dict[str, float] = {}
-        hit_map: dict[str, RetrievalHit] = {}
-
-        def add_to_rrf(hits: list[RetrievalHit], weight: float):
-            for rank, hit in enumerate(hits):
-                # Using the text as a unique key since IDs aren't stored in RetrievalHit
-                key = str(hash(hit.text))
-                if key not in rrf_scores:
-                    rrf_scores[key] = 0.0
-                    hit_map[key] = hit
-                # RRF Formula: weight * (1 / (k + rank))
-                rrf_scores[key] += weight * (1.0 / (self.rrf_k + rank + 1))
-
-        add_to_rrf(semantic_hits, self.semantic_weight)
-        add_to_rrf(bm25_hits, self.bm25_weight)
-
-        # Sort by highest RRF score and return the top 'k'
-        fused = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:k]
-        return [hit_map[key] for key, score in fused]
-
     
 
 
