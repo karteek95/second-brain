@@ -14,21 +14,26 @@ try:
 except ImportError:
     get_client = None  # type: ignore
 
+import threading  # <-- Add this import at the top
+
 
 class JsonlTraceSink:
     """Tiny local observability adapter."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._lock = threading.Lock()  # Fix: Thread lock prevents Windows file-write crashes
 
     def record(self, event: str, payload: dict[str, Any]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        row = {"ts": time.time(), "event": event, "payload": payload}
-        with self.path.open("a", encoding="utf-8") as f:
-            f.write(
-                json.dumps(row, default=_json_default, ensure_ascii=False)
-                + "\n"
-            )
+        # Enforce exclusive access to the file resource
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            row = {"ts": time.time(), "event": event, "payload": payload}
+            with self.path.open("a", encoding="utf-8") as f:
+                f.write(
+                    json.dumps(row, default=_json_default, ensure_ascii=False)
+                    + "\n"
+                )
 
     @contextmanager
     def observe_stream(self, event: str, input_data: Any, metadata: dict):
